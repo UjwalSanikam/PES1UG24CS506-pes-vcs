@@ -193,9 +193,49 @@ int head_update(const ObjectID *new_commit) {
 //   - head_update       : moves the branch pointer to your new commit
 //
 // Returns 0 on success, -1 on error.
+// Create a new commit from the current staging area.
 int commit_create(const char *message, ObjectID *commit_id_out) {
-    // TODO: Implement commit creation
-    // (See Lab Appendix for logical steps)
-    (void)message; (void)commit_id_out;
-    return -1;
+    Commit commit;
+    memset(&commit, 0, sizeof(Commit));
+
+    // 1. Build the tree from the index (Creates the directory snapshot)
+    if (tree_from_index(&commit.tree) != 0) {
+        fprintf(stderr, "error: failed to build tree from index\n");
+        return -1;
+    }
+
+    // 2. Read current HEAD to get the parent commit (if it exists)
+    if (head_read(&commit.parent) == 0) {
+        commit.has_parent = 1;
+    } else {
+        commit.has_parent = 0; // This is the very first commit
+    }
+
+    // 3. Set the author and timestamp
+    snprintf(commit.author, sizeof(commit.author), "%s", pes_author());
+    commit.timestamp = (uint64_t)time(NULL);
+
+    // 4. Set the commit message
+    snprintf(commit.message, sizeof(commit.message), "%s", message);
+
+    // 5. Serialize the struct into the text format
+    void *data = NULL;
+    size_t len = 0;
+    if (commit_serialize(&commit, &data, &len) != 0) {
+        return -1;
+    }
+
+    // 6. Write the commit to the object store
+    if (object_write(OBJ_COMMIT, data, len, commit_id_out) != 0) {
+        free(data);
+        return -1;
+    }
+    free(data);
+
+    // 7. Update the branch pointer to point to this new commit
+    if (head_update(commit_id_out) != 0) {
+        return -1;
+    }
+
+    return 0;
 }
