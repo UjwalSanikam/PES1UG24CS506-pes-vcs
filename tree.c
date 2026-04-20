@@ -157,24 +157,36 @@ static int write_tree_level(Index *idx, int start, int end, int path_offset, Obj
 }
 
 // Build a tree hierarchy from the current index
+// Build a tree hierarchy from the current index
 int tree_from_index(ObjectID *id_out) {
-    Index idx;
+    // Allocate on the heap to prevent 5.6MB stack overflow
+    Index *idx = malloc(sizeof(Index));
+    if (!idx) return -1;
     
     // Load the current staging area
-    if (index_load(&idx) != 0) return -1;
+    if (index_load(idx) != 0) {
+        free(idx);
+        return -1;
+    }
 
     // Handle the edgecase of an empty commit
-    if (idx.count == 0) {
+    if (idx->count == 0) {
         Tree empty_tree;
         empty_tree.count = 0;
         void *data; 
         size_t len;
-        if (tree_serialize(&empty_tree, &data, &len) != 0) return -1;
+        if (tree_serialize(&empty_tree, &data, &len) != 0) {
+            free(idx);
+            return -1;
+        }
         int res = object_write(OBJ_TREE, data, len, id_out);
         free(data);
+        free(idx);
         return res;
     }
 
     // Start the recursive build at the root (depth offset 0)
-    return write_tree_level(&idx, 0, idx.count, 0, id_out);
+    int result = write_tree_level(idx, 0, idx->count, 0, id_out);
+    free(idx);
+    return result;
 }
